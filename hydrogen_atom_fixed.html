@@ -1,0 +1,357 @@
+
+<h2 class="sr-only">3D hydrogen atom electron probability visualizer with multiple view modes</h2>
+<div id="root" style="width:100%">
+<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 0 6px;border-bottom:0.5px solid var(--color-border-tertiary)">
+  <button class="vb active" data-v="cloud" onclick="setView('cloud',this)">Electron Cloud</button>
+  <button class="vb" data-v="angular" onclick="setView('angular',this)">Angular Momentum L</button>
+  <button class="vb" data-v="radial" onclick="setView('radial',this)">Radial Density</button>
+  <button class="vb" data-v="spin" onclick="setView('spin',this)">Spin S</button>
+</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 0 5px;border-bottom:0.5px solid var(--color-border-tertiary)">
+  <label style="font-size:11px;color:var(--color-text-secondary)">n</label>
+  <select id="sN" onchange="onN()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);width:48px">
+    <option>1</option><option selected>2</option><option>3</option><option>4</option>
+  </select>
+  <label style="font-size:11px;color:var(--color-text-secondary)">l</label>
+  <select id="sL" onchange="onL()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);width:48px">
+    <option>0</option><option selected>1</option>
+  </select>
+  <label style="font-size:11px;color:var(--color-text-secondary)">m<sub>l</sub></label>
+  <select id="sM" onchange="rebuild()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);width:52px">
+    <option value="-1">-1</option><option value="0" selected>0</option><option value="1">+1</option>
+  </select>
+  <label style="font-size:11px;color:var(--color-text-secondary)">color</label>
+  <select id="sCm" onchange="rebuild()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);width:76px">
+    <option value="plasma">plasma</option>
+    <option value="fire">fire</option>
+    <option value="cool">cool</option>
+    <option value="viridis">viridis</option>
+  </select>
+  <label style="font-size:11px;color:var(--color-text-secondary)">pts</label>
+  <select id="sPts" onchange="rebuild()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);width:60px">
+    <option value="4000">4k</option><option value="8000" selected>8k</option><option value="15000">15k</option>
+  </select>
+  <button onclick="rebuild()" style="font-size:11px;padding:3px 10px;border-radius:5px;cursor:pointer;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary)">↺</button>
+  <span id="orbLabel" style="font-size:13px;font-weight:500;color:var(--color-text-primary);margin-left:4px">2p</span>
+</div>
+<canvas id="cv" style="width:100%;height:440px;display:block;cursor:grab;margin-top:4px"></canvas>
+<div id="cbarRow" style="display:flex;align-items:center;gap:6px;padding:4px 0 2px">
+  <span style="font-size:10px;color:var(--color-text-secondary)">low ρ</span>
+  <canvas id="cbar" width="400" height="14" style="flex:1;border-radius:4px;height:12px"></canvas>
+  <span style="font-size:10px;color:var(--color-text-secondary)">high ρ</span>
+</div>
+<div id="infoRow" style="display:flex;gap:14px;flex-wrap:wrap;padding:4px 0;border-top:0.5px solid var(--color-border-tertiary)">
+  <span id="iL" style="font-size:11px;color:var(--color-text-secondary)">L = <b style="color:var(--color-text-primary)">ℏ√2</b></span>
+  <span id="iLz" style="font-size:11px;color:var(--color-text-secondary)">Lz = <b style="color:var(--color-text-primary)">0</b></span>
+  <span id="iE" style="font-size:11px;color:var(--color-text-secondary)">E = <b style="color:var(--color-text-primary)">-3.4 eV</b></span>
+  <span id="ir" style="font-size:11px;color:var(--color-text-secondary)">⟨r⟩ ≈ <b style="color:var(--color-text-primary)">5a₀</b></span>
+  <span id="iNote" style="font-size:11px;color:var(--color-text-secondary)"></span>
+</div>
+</div>
+<style>
+.vb{font-size:11px;padding:3px 9px;border-radius:5px;cursor:pointer;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-secondary)}
+.vb.active{background:var(--color-text-primary);color:var(--color-background-primary);border-color:var(--color-text-primary)}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+var currentView = 'cloud';
+function setView(v, btn) {
+  currentView = v;
+  document.querySelectorAll('.vb').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  rebuild();
+}
+
+var CMAPS = {
+  plasma: function(t){ return [Math.min(1,0.1+t*1.5+t*t*0.5), Math.max(0,Math.min(1,t*1.5-0.3)), Math.min(1,0.9-t*0.8)]; },
+  fire:   function(t){ return [Math.min(1,t*2.5), Math.min(1,Math.max(0,t*2.5-1)), Math.min(1,Math.max(0,t*2.5-2))]; },
+  cool:   function(t){ return [t, 0.4+t*0.2, 1-t*0.6]; },
+  viridis:function(t){ return [Math.max(0,Math.min(1,-0.1+2.5*t-2*t*t)), Math.max(0,Math.min(1,0.1+1.8*t-t*t)), Math.max(0,Math.min(1,0.4+0.6*t-0.8*t*t))]; }
+};
+
+function drawColorbar(cmap) {
+  var cb = document.getElementById('cbar');
+  var ctx = cb.getContext('2d');
+  var w = cb.width, h = cb.height;
+  for (var i = 0; i < w; i++) {
+    var t = i/w, c = CMAPS[cmap](t);
+    ctx.fillStyle = 'rgb('+Math.round(c[0]*255)+','+Math.round(c[1]*255)+','+Math.round(c[2]*255)+')';
+    ctx.fillRect(i, 0, 1, h);
+  }
+}
+
+function fact(n){ var r=1; for(var i=2;i<=n;i++) r*=i; return r; }
+function laguerre(nr,alpha,x){
+  if(nr<=0) return 1;
+  if(nr==1) return 1+alpha-x;
+  var L0=1,L1=1+alpha-x,Lk=0;
+  for(var k=2;k<=nr;k++){ Lk=((2*k-1+alpha-x)*L1-(k-1+alpha)*L0)/k; L0=L1; L1=Lk; }
+  return L1;
+}
+function legendre(l,m,x){
+  var am=Math.abs(m), pmm=1;
+  if(am>0){ var s=Math.sqrt(Math.max(0,1-x*x)); for(var i=1;i<=am;i++) pmm*=-(2*i-1)*s; }
+  if(l==am) return pmm;
+  var p1=(2*am+1)*x*pmm;
+  if(l==am+1) return p1;
+  var pll=0;
+  for(var ll=am+2;ll<=l;ll++){ pll=((2*ll-1)*x*p1-(ll+am-1)*pmm)/(ll-am); pmm=p1; p1=pll; }
+  return pll;
+}
+function psi2(n,l,m,r,th){
+  var nr=n-l-1; if(nr<0) return 0;
+  var rho=2*r/n;
+  var nR=Math.sqrt(Math.pow(2/n,3)*fact(nr)/(2*n*Math.pow(fact(n+l),3)));
+  var R=nR*Math.exp(-rho/2)*Math.pow(rho,l)*laguerre(nr,2*l+1,rho);
+  var am=Math.abs(m);
+  var nA=Math.sqrt((2*l+1)/(4*Math.PI)*fact(l-am)/fact(l+am));
+  var A=nA*legendre(l,am,Math.cos(th));
+  return R*A*R*A;
+}
+
+// ---- Three.js setup ----
+var canvas = document.getElementById('cv');
+var W = 660, H = 440;
+canvas.width = W; canvas.height = H;
+
+var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, alpha:true});
+renderer.setSize(W, H);
+renderer.setClearColor(0x080810, 1);
+
+var scene = new THREE.Scene();
+var camera = new THREE.PerspectiveCamera(45, W/H, 0.1, 2000);
+camera.position.z = 30;
+
+var objs = [];
+function clearObjs(){
+  for(var i=0;i<objs.length;i++){
+    scene.remove(objs[i]);
+    if(objs[i].geometry) objs[i].geometry.dispose();
+    if(objs[i].material) objs[i].material.dispose();
+  }
+  objs=[];
+}
+
+function addLine(p1,p2,color,opacity){
+  var g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p1[0],p1[1],p1[2]),new THREE.Vector3(p2[0],p2[1],p2[2])]);
+  var m=new THREE.LineBasicMaterial({color:color,transparent:true,opacity:opacity||1});
+  var l=new THREE.Line(g,m); scene.add(l); objs.push(l);
+}
+function addCircle(cx,cy,cz,r,axis,color,opacity){
+  var pts=[];
+  for(var i=0;i<=64;i++){
+    var a=i/64*Math.PI*2;
+    if(axis=='y') pts.push(new THREE.Vector3(cx+r*Math.cos(a),cy,cz+r*Math.sin(a)));
+    else if(axis=='z') pts.push(new THREE.Vector3(cx+r*Math.cos(a),cy+r*Math.sin(a),cz));
+    else pts.push(new THREE.Vector3(cx,cy+r*Math.cos(a),cz+r*Math.sin(a)));
+  }
+  var g=new THREE.BufferGeometry().setFromPoints(pts);
+  var m=new THREE.LineBasicMaterial({color:color,transparent:true,opacity:opacity||1});
+  var l=new THREE.Line(g,m); scene.add(l); objs.push(l);
+}
+
+function buildCloud(){
+  var n=+document.getElementById('sN').value;
+  var l=+document.getElementById('sL').value;
+  var m=+document.getElementById('sM').value;
+  var N=+document.getElementById('sPts').value;
+  var cmap=document.getElementById('sCm').value;
+  var rmax=n*n*(3+l)*4.5;
+  var pmax=0;
+  for(var i=0;i<6000;i++){
+    var r=Math.random()*rmax, th=Math.acos(2*Math.random()-1);
+    var p=psi2(n,l,m,r,th)*r*r;
+    if(p>pmax) pmax=p;
+  }
+  pmax*=1.2;
+  var pos=[],col=[],count=0,tries=0;
+  while(count<N && tries<N*120){
+    tries++;
+    var r=Math.random()*rmax, th=Math.acos(2*Math.random()-1), ph=Math.random()*Math.PI*2;
+    var p=psi2(n,l,m,r,th)*r*r;
+    if(Math.random()<p/pmax){
+      pos.push(r*Math.sin(th)*Math.cos(ph), r*Math.sin(th)*Math.sin(ph), r*Math.cos(th));
+      var t=Math.pow(p/pmax,0.45);
+      var c=CMAPS[cmap](t);
+      col.push(c[0],c[1],c[2]);
+      count++;
+    }
+  }
+  var g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));
+  g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(col),3));
+  var mat=new THREE.PointsMaterial({size:0.18,vertexColors:true,transparent:true,opacity:0.85,sizeAttenuation:true});
+  var pts=new THREE.Points(g,mat); scene.add(pts); objs.push(pts);
+}
+
+function buildRadial(){
+  var n=+document.getElementById('sN').value;
+  var l=+document.getElementById('sL').value;
+  var m=+document.getElementById('sM').value;
+  var cmap=document.getElementById('sCm').value;
+  var rmax=n*n*(3+l)*5;
+  var Nr=150,Nth=60,Nph=36;
+  var pmax=0;
+  for(var ir=1;ir<Nr;ir++){
+    var r=ir/Nr*rmax;
+    for(var it=0;it<Nth;it++){
+      var th=it/Nth*Math.PI;
+      var p=psi2(n,l,m,r,th)*r*r*Math.sin(th);
+      if(p>pmax) pmax=p;
+    }
+  }
+  pmax*=1.1;
+  var pos=[],col=[];
+  for(var ir=1;ir<Nr;ir++){
+    var r=ir/Nr*rmax;
+    for(var it=0;it<Nth;it++){
+      var th=it/Nth*Math.PI;
+      var p=psi2(n,l,m,r,th)*r*r*Math.sin(th);
+      var t=p/pmax;
+      if(t<0.015) continue;
+      for(var ip=0;ip<Nph;ip++){
+        var ph=ip/Nph*Math.PI*2;
+        pos.push(r*Math.sin(th)*Math.cos(ph),r*Math.sin(th)*Math.sin(ph),r*Math.cos(th));
+        var c=CMAPS[cmap](Math.pow(t,0.4));
+        col.push(c[0],c[1],c[2]);
+      }
+    }
+  }
+  var g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));
+  g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(col),3));
+  var mat=new THREE.PointsMaterial({size:0.14,vertexColors:true,transparent:true,opacity:0.7});
+  var pts=new THREE.Points(g,mat); scene.add(pts); objs.push(pts);
+}
+
+function buildAngular(){
+  var l=+document.getElementById('sL').value;
+  var m=+document.getElementById('sM').value;
+  var sc=9;
+  if(l==0){
+    var g=new THREE.SphereGeometry(1.2,16,16);
+    var mat=new THREE.MeshBasicMaterial({color:0x4488ff,wireframe:true,transparent:true,opacity:0.4});
+    var mesh=new THREE.Mesh(g,mat); scene.add(mesh); objs.push(mesh);
+    document.getElementById('iNote').innerHTML='l=0: L=0, single state, spherically symmetric';
+    return;
+  }
+  var Lmag=Math.sqrt(l*(l+1))*sc/Math.sqrt(l*(l+1)+1);
+  // sphere shell
+  var sg=new THREE.SphereGeometry(Lmag,32,32);
+  var sm=new THREE.MeshBasicMaterial({color:0x224466,wireframe:true,transparent:true,opacity:0.12});
+  var sph=new THREE.Mesh(sg,sm); scene.add(sph); objs.push(sph);
+  // z-axis
+  addLine([0,-Lmag*1.3,0],[0,Lmag*1.3,0],0xffffff,0.4);
+  // each ml
+  for(var mi=-l;mi<=l;mi++){
+    var Lz=mi/Math.sqrt(l*(l+1))*Lmag;
+    var Lxy=Math.sqrt(Math.max(0,Lmag*Lmag-Lz*Lz));
+    var isSel=(mi==m);
+    var color=isSel?0xffcc00:0x3366aa;
+    var opacity=isSel?1.0:0.35;
+    addCircle(0,Lz,0,Lxy,'y',color,opacity);
+    if(isSel){
+      addLine([0,0,0],[Lxy,Lz,0],0xffcc00,1);
+      // dashed cone outline
+      addLine([0,0,0],[-Lxy,Lz,0],0xffcc00,0.4);
+    }
+  }
+  // label selected
+  document.getElementById('iNote').innerHTML=(2*l+1)+' orientations on sphere, selected mₗ='+m+' in gold';
+}
+
+function buildSpin(){
+  var S=Math.sqrt(3/4)*9;
+  var sc=S;
+  // sphere
+  var sg=new THREE.SphereGeometry(sc,32,32);
+  var sm=new THREE.MeshBasicMaterial({color:0x333355,wireframe:true,transparent:true,opacity:0.15});
+  var sph=new THREE.Mesh(sg,sm); scene.add(sph); objs.push(sph);
+  addLine([0,-sc*1.3,0],[0,sc*1.3,0],0xffffff,0.4);
+  // up
+  var Sup=sc/2, Sxy_up=Math.sqrt(Math.max(0,sc*sc-Sup*Sup));
+  addCircle(0,Sup,0,Sxy_up,'y',0x44ff88,1);
+  addLine([0,0,0],[Sxy_up,Sup,0],0x44ff88,1);
+  // down
+  var Sdown=-sc/2, Sxy_down=Math.sqrt(Math.max(0,sc*sc-Sdown*Sdown));
+  addCircle(0,Sdown,0,Sxy_down,'y',0xff4488,1);
+  addLine([0,0,0],[Sxy_down,Sdown,0],0xff4488,1);
+  document.getElementById('iNote').innerHTML='S=ℏ√(3/4)  |  green=spin up mₛ=+½  |  pink=spin down mₛ=−½';
+}
+
+function addAxes(){
+  addLine([-20,0,0],[20,0,0],0xaa4444,0.25);
+  addLine([0,-20,0],[0,20,0],0x44aa44,0.25);
+  addLine([0,0,-20],[0,0,20],0x4444aa,0.25);
+  // nucleus
+  var g=new THREE.SphereGeometry(0.38,16,16);
+  var m=new THREE.MeshBasicMaterial({color:0xff5522});
+  var mesh=new THREE.Mesh(g,m); scene.add(mesh); objs.push(mesh);
+}
+
+function updateInfo(){
+  var n=+document.getElementById('sN').value;
+  var l=+document.getElementById('sL').value;
+  var m=+document.getElementById('sM').value;
+  var lnames=['s','p','d','f','g'];
+  document.getElementById('orbLabel').textContent=n+(lnames[l]||l)+(l>0?' (mₗ='+(m>=0?'+':'')+m+')':'');
+  document.getElementById('iL').innerHTML='L = <b style="color:var(--color-text-primary)">'+(l>0?'ℏ√'+l*(l+1):'0')+'</b>';
+  document.getElementById('iLz').innerHTML='Lz = <b style="color:var(--color-text-primary)">'+(m>=0?'+':'')+m+'ℏ</b>';
+  document.getElementById('iE').innerHTML='E = <b style="color:var(--color-text-primary)">'+(-13.6/n/n).toFixed(2)+' eV</b>';
+  var rexp=(n*n*(3*n*n-l*(l+1))/(2*(l+0.5))).toFixed(1);
+  document.getElementById('ir').innerHTML='⟨r⟩ ≈ <b style="color:var(--color-text-primary)">'+rexp+'a₀</b>';
+  document.getElementById('iNote').textContent='';
+}
+
+function onN(){
+  var n=+document.getElementById('sN').value;
+  var sl=document.getElementById('sL');
+  var curL=+sl.value;
+  sl.innerHTML='';
+  for(var i=0;i<n;i++){var o=document.createElement('option');o.value=i;o.textContent=i;if(i==Math.min(curL,n-1))o.selected=true;sl.appendChild(o);}
+  onL();
+}
+function onL(){
+  var l=+document.getElementById('sL').value;
+  var sm=document.getElementById('sM');
+  sm.innerHTML='';
+  for(var i=-l;i<=l;i++){var o=document.createElement('option');o.value=i;o.textContent=(i>=0?'+':'')+i;if(i==0)o.selected=true;sm.appendChild(o);}
+  rebuild();
+}
+
+function rebuild(){
+  clearObjs();
+  addAxes();
+  updateInfo();
+  var cmap=document.getElementById('sCm').value;
+  drawColorbar(cmap);
+  if(currentView=='cloud') buildCloud();
+  else if(currentView=='radial') buildRadial();
+  else if(currentView=='angular') buildAngular();
+  else if(currentView=='spin') buildSpin();
+}
+
+// rotation
+var rotX=0.3,rotY=0,drag=false,lx=0,ly=0;
+canvas.addEventListener('mousedown',function(e){drag=true;lx=e.clientX;ly=e.clientY;canvas.style.cursor='grabbing';});
+window.addEventListener('mouseup',function(){drag=false;canvas.style.cursor='grab';});
+canvas.addEventListener('mousemove',function(e){if(!drag)return;rotY+=(e.clientX-lx)*0.009;rotX+=(e.clientY-ly)*0.009;lx=e.clientX;ly=e.clientY;});
+canvas.addEventListener('wheel',function(e){e.preventDefault();camera.position.z=Math.max(5,Math.min(90,camera.position.z+e.deltaY*0.05));},{passive:false});
+var tlx=0,tly=0;
+canvas.addEventListener('touchstart',function(e){tlx=e.touches[0].clientX;tly=e.touches[0].clientY;},{passive:true});
+canvas.addEventListener('touchmove',function(e){e.preventDefault();rotY+=(e.touches[0].clientX-tlx)*0.012;rotX+=(e.touches[0].clientY-tly)*0.012;tlx=e.touches[0].clientX;tly=e.touches[0].clientY;},{passive:false});
+
+function animate(){
+  requestAnimationFrame(animate);
+  rotY+=0.004;
+  var cosX=Math.cos(rotX),sinX=Math.sin(rotX),cosY=Math.cos(rotY),sinY=Math.sin(rotY);
+  for(var i=0;i<objs.length;i++){
+    objs[i].rotation.x=rotX;
+    objs[i].rotation.y=rotY;
+  }
+  renderer.render(scene,camera);
+}
+
+rebuild();
+animate();
+</script>
