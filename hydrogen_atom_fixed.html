@@ -1,39 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hydrogen atom orbital visualizer</title>
+<style>
+:root{
+  --text-primary:#1a1a18;--text-secondary:#5f5e5a;--border:rgba(0,0,0,0.15);
+  --surface-1:#f4f3ee;--surface-2:#ffffff;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --text-primary:#f1efe8;--text-secondary:#b4b2a9;--border:rgba(255,255,255,0.18);
+    --surface-1:#1f1f1d;--surface-2:#2a2a28;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--surface-1);color:var(--text-primary);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+#root{max-width:760px;margin:0 auto}
+select,button{font:inherit;font-size:12px;padding:3px 8px;border-radius:6px;border:0.5px solid var(--border);background:var(--surface-2);color:var(--text-primary);cursor:pointer}
+.vb.active{background:var(--text-primary);color:var(--surface-2);border-color:var(--text-primary)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border)}
+.row label{font-size:12px;color:var(--text-secondary)}
+</style>
+</head>
+<body>
+<div id="root">
+<div class="row">
+  <button class="vb active" onclick="setView('cloud',this)">Electron cloud</button>
+  <button class="vb" onclick="setView('angular',this)">Angular momentum L</button>
+  <button class="vb" onclick="setView('radial',this)">Radial density</button>
+  <button class="vb" onclick="setView('spin',this)">Spin S</button>
+</div>
+<div class="row">
+  <label>n</label>
+  <select id="sN" onchange="onN()"><option>1</option><option selected>2</option><option>3</option><option>4</option></select>
+  <label>l</label>
+  <select id="sL" onchange="onL()"><option>0</option><option selected>1</option></select>
+  <label>m<sub>l</sub></label>
+  <select id="sM" onchange="rebuild()"><option value="-1">-1</option><option value="0" selected>0</option><option value="1">+1</option></select>
+  <label>color</label>
+  <select id="sCm" onchange="rebuild()"><option value="plasma">plasma</option><option value="fire">fire</option><option value="cool">cool</option><option value="viridis">viridis</option></select>
+  <label>pts</label>
+  <select id="sPts" onchange="rebuild()"><option value="4000">4k</option><option value="8000" selected>8k</option><option value="15000">15k</option></select>
+  <button onclick="rebuild()" aria-label="Resample">&#8634;</button>
+  <span id="orbLabel" style="font-size:14px;font-weight:500;margin-left:4px">2p</span>
+</div>
+<canvas id="cv" style="width:100%;height:440px;display:block;cursor:grab;margin-top:4px;touch-action:none"></canvas>
+<div id="cbarRow" style="display:flex;align-items:center;gap:6px;padding:4px 0 2px">
+  <span style="font-size:11px;color:var(--text-secondary)">low &rho;</span>
+  <canvas id="cbar" width="400" height="14" style="flex:1;border-radius:4px;height:12px;min-width:0"></canvas>
+  <span style="font-size:11px;color:var(--text-secondary)">high &rho;</span>
+</div>
+<div style="display:flex;gap:14px;flex-wrap:wrap;padding:4px 0;border-top:0.5px solid var(--border)">
+  <span id="iL" style="font-size:12px;color:var(--text-secondary)"></span>
+  <span id="iLz" style="font-size:12px;color:var(--text-secondary)"></span>
+  <span id="iE" style="font-size:12px;color:var(--text-secondary)"></span>
+  <span id="ir" style="font-size:12px;color:var(--text-secondary)"></span>
+  <span id="iNote" style="font-size:12px;color:var(--text-secondary)"></span>
+</div>
+</div>
 
-<h2 class="sr-only">3D hydrogen atom electron probability visualizer with multiple view modes</h2>
-<div id="root" style="width:100%">
-<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 0 6px;border-bottom:0.5px solid var(--color-border-tertiary)">
-  <button class="vb active" data-v="cloud" onclick="setView('cloud',this)">Electron Cloud</button>
-  <button class="vb" data-v="angular" onclick="setView('angular',this)">Angular Momentum L</button>
-  <button class="vb" data-v="radial" onclick="setView('radial',this)">Radial Density</button>
-  <button class="vb" data-v="spin" onclick="setView('spin',this)">Spin S</button>
-</div>
-<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 0 5px;border-bottom:0.5px solid var(--color-border-tertiary)">
-  <label style="font-size:11px;color:var(--color-text-secondary)">n</label>
-  <select id="sN" onchange="onN()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);width:48px">
-    <option>1</option><option selected>2</option><option>3</option><option>4</option>
-  </select>
-  <label style="font-size:11px;color:var(--color-text-secondary)">l</label>
-  <select id="sL" onchange="onL()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);width:48px">
-    <option>0</option><option selected>1</option>
-  </select>
-  <label style="font-size:11px;color:var(--color-text-secondary)">m<sub>l</sub></label>
-  <select id="sM" onchange="rebuild()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);width:52px">
-    <option value="-1">-1</option><option value="0" selected>0</option><option value="1">+1</option>
-  </select>
-  <label style="font-size:11px;color:var(--color-text-secondary)">color</label>
-  <select id="sCm" onchange="rebuild()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);width:76px">
-    <option value="plasma">plasma</option>
-    <option value="fire">fire</option>
-    <option value="cool">cool</option>
-    <option value="viridis">viridis</option>
-  </select>
-  <label style="font-size:11px;color:var(--color-text-secondary)">pts</label>
-  <select id="sPts" onchange="rebuild()" style="font-size:12px;padding:3px 6px;border-radius:5px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary);width:60px">
-    <option value="4000">4k</option><option value="8000" selected>8k</option><option value="15000">15k</option>
-  </select>
-  <button onclick="rebuild()" style="font-size:11px;padding:3px 10px;border-radius:5px;cursor:pointer;border:0.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-text-primary)">↺</button>
-  <span id="orbLabel" style="font-size:13px;font-weight:500;color:var(--color-text-primary);margin-left:4px">2p</span>
-</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+var currentView='cloud';
+function setView(v,btn){
+  currentView=v;
+  document.querySelectorAll('.vb').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  rebuild();
+}
+
+var CMAPS={
+  plasma:function(t){return [Math.min(1,0.1+t*1.5+t*t*0.5),Math.max(0,Math.min(1,t*1.5-0.3)),Math.min(1,0.9-t*0.8)];},
+  fire:function(t){return [Math.min(1,t*2.5),Math.min(1,Math.max(0,t*2.5-1)),Math.min(1,Math.max(0,t*2.5-2))];},
+  cool:function(t){return [t,0.4+t*0.2,1-t*0.6];},
+  viridis:function(t){return [Math.max(0,Math.min(1,-0.1+2.5*t-2*t*t)),Math.max(0,Math.min(1,0.1+1.8*t-t*t)),Math.max(0,Math.min(1,0.4+0.6*t-0.8*t*t))];}
+};
+
+function drawColorbar(cmap){
+  var cb=document.getElementById('cbar'),ctx=cb.getContext('2d'),w=cb.width,h=cb.height;
+  for(var i=0;i<w;i++){
+    var c=CMAPS[cmap](i/w);
+    ctx.fillStyle='rgb('+Math.round(c[0]*255)+','+Math.round(c[1]*255)+','+Math.round(c[2]*255)+')';
+    ctx.fillRect(i,0,1,h);
+  }
+}
+
+function fact(n){var r=1;for(var i=2;i<=n;i++)r*=i;return r;}
+function laguerre(nr,alpha,x){
+  if(nr<=0)return 1;
+  if(nr==1)return 1+alpha-x;
+  var L0=1,L1=1+alpha-x,Lk=0;
+  for(var k=2;k<=nr;k++){Lk=((2*k-1+alpha-x)*L1-(k-1+alpha)*L0)/k;L0=L1;L1=Lk;}
+  return L1;
+}
+function legendre(l,m,x){
+  var am=Math.abs(m),pmm=1;
+  if(am>0){var s=Math.sqrt(Math.max(0,1-x*x));for(var i=1;i<=am;i++)pmm*=-(2*i-1)*s;}
+  if(l==am)return pmm;
+  var p1=(2*am+1)*x*pmm;
+  if(l==am+1)return p1;
+  var pll=0;
+  for(var ll=am+2;ll<=l;ll++){pll=((2*ll-1)*x*p1-(ll+am-1)*pmm)/(ll-am);pmm=p1;p1=pll;}
+  return pll;
+}
+function psi2(n,l,m,r,th){
+  var nr=n-l-1;if(nr<0)return 0;
+  var rho=2*r/n;
+  var nR=Math.sqrt(Math.pow(2/n,3)*fact(nr)/(2*n*Math.pow(fact(n+l),3)));
+  var R=nR*Math.exp(-rho/2)*Math.pow(rho,l)*laguerre(nr,2*l+1,rho);
+  var am=Math.abs(m);
+  var nA=Math.sqrt((2*l+1)/(4*Math.PI)*fact(l-am)/fact(l+am));
+  var A=nA*legendre(l,am,Math.cos(th));
+  return R*A*R*A;
+}
+
+var canvas=document.getElementById('cv');
+var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true});
+renderer.setClearColor(0x080810,1);
+var scene=new THREE.Scene();
+var camera=new THREE.PerspectiveCamera(45,1.5,0.1,2000);
+camera.position.z=30;
+
+function resize(){
+  var w=canvas.clientWidth||660,h=440;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize',resize);
+resize();
+
+var objs=[];
+function clearObjs(){
+  for(var i=0;i<objs.length;i++){
+    scene.remove(objs[i]);
+    if(objs[i].geometry)objs[i].geometry.dispose();
+    if(objs[i].material)objs[i].material.dispose();
+  }
+  objs=[];
+}
+function addLine(p1,p2,color,opacity){
+  var g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p1[0],p1[1],p1[2]),new THREE.Vector3(p2[0],p2[1],p2[2])]);
+  var m=new THREE.LineBasicMaterial({color:color,transparent:true,opacity:opacity||1});
+  var l=new THREE.Line(g,m);scene.add(l);objs.push(l);
+}
+function addCircle(cx,cy,cz,r,color,opacity){
+  var pts=[];
+  for(var i=0;i<=64;i++){var a=i/64*Math.PI*2;pts.push(new THREE.Vector3(cx+r*Math.cos(a),cy,cz+r*Math.sin(a)));}
+  var g=new THREE.BufferGeometry().setFromPoints(pts);
+  var m=new THREE.LineBasicMaterial({color:color,transparent:true,opacity:opacity||1});
+  var l=new THREE.Line(g,m);scene.add(l);objs.push(l);
+}
+function sel(id){return document.getElementById(id);}
+
+function orbRmax(n){return 2.4*n*n+8*n;}
+
+function polar(r,th,ph,out){
+  out.push(r*Math.sin(th)*Math.cos(ph),r*Math.cos(th),r*Math.sin(th)*Math.sin(ph));
+}
+
+function finishPoints(pos,col,maxR,size,opacity){
+  var k=12/Math.max(maxR,1e-6);
+  for(var i=0;i<pos.length;i++)pos[i]*=k;
+  var g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));
+  g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(col),3));
+  var mat=new THREE.PointsMaterial({size:size,vertexColors:true,transparent:true,opacity:opacity});
+  var pts=new THREE.Points(g,mat);scene.add(pts);objs.push(pts);
+}
+
+function buildCloud(){
+  var n=+sel('sN').value,l=+sel('sL').value,m=+sel('sM').value,N=+sel('sPts').value,cmap=sel('sCm').value;
+  var rmax=orbRmax(n),pmax=0;
+  for(var i=1;i<=300;i++){
+    var r0=i/300*rmax;
+    for(var j=0;j<=40;j++){
+      var p0=psi2(n,l,m,r0,Math.acos(-1+2*j/40))*r0*r0;
+      if(p0>pmax)pmax=p0;
+    }
+  }
+  pmax*=1.25;
+  var pos=[],col=[],count=0,tries=0,maxR=0;
+  while(count<N&&tries<N*150){
+    tries++;
+    var r=Math.random()*rmax,th=Math.acos(2*Math.random()-1),ph=Math.random()*Math.PI*2;
+    var p=psi2(n,l,m,r,th)*r*r;
+    if(Math.random()<p/pmax){
+      polar(r,th,ph,pos);
+      if(r>maxR)maxR=r;
+      var c=CMAPS[cmap](Math.min(1,Math.pow(p/pmax,0.45)));
+      col.push(c[0],c[1],c[2]);
+      count++;
+    }
+  }
+  finishPoints(pos,col,maxR,0.18,0.85);
+  sel('iNote').textContent='cloud radius \u2248 '+Math.round(maxR)+' a\u2080 (auto-scaled), vertical axis = z';
+}
+
+function buildRadial(){
+  var n=+sel('sN').value,l=+sel('sL').value,m=+sel('sM').value,cmap=sel('sCm').value;
+  var rmax=orbRmax(n),Nr=150,Nth=60,Nph=36,pmax=0;
+  for(var ir=1;ir<Nr;ir++){
+    var r=ir/Nr*rmax;
+    for(var it=0;it<Nth;it++){
+      var p=psi2(n,l,m,r,it/Nth*Math.PI)*r*r*Math.sin(it/Nth*Math.PI);
+      if(p>pmax)pmax=p;
+    }
+  }
+  pmax*=1.1;
+  var pos=[],col=[],maxR=0;
+  for(var ir2=1;ir2<Nr;ir2++){
+    var r2=ir2/Nr*rmax;
+    for(var it2=0;it2<Nth;it2++){
+      var th=it2/Nth*Math.PI;
+      var t=psi2(n,l,m,r2,th)*r2*r2*Math.sin(th)/pmax;
+      if(t<0.015)continue;
+      if(r2>maxR)maxR=r2;
+      var c=CMAPS[cmap](Math.min(1,Math.pow(t,0.4)));
+      for(var ip=0;ip<Nph;ip++){
+        polar(r2,th,ip/Nph*Math.PI*2,pos);
+        col.push(c[0],c[1],c[2]);
+      }
+    }
+  }
+  finishPoints(pos,col,maxR,0.14,0.7);
+  sel('iNote').textContent='shell radius \u2248 '+Math.round(maxR)+' a\u2080 (auto-scaled), vertical axis = z';
+}
+
+function buildAngular(){
+  var l=+sel('sL').value,m=+sel('sM').value,sc=9;
+  if(l==0){
+    var g=new THREE.SphereGeometry(1.2,16,16);
+    var mat=new THREE.MeshBasicMaterial({color:0x4488ff,wireframe:true,transparent:true,opacity:0.4});
+    var mesh=new THREE.Mesh(g,mat);scene.add(mesh);objs.push(mesh);
+    sel('iNote').textContent='l=0: L=0, single state, spherically symmetric';
+    return;
+  }
+  var Lmag=Math.sqrt(l*(l+1))*sc/Math.sqrt(l*(l+1)+1);
+  var sph=new THREE.Mesh(new THREE.SphereGeometry(Lmag,32,32),new THREE.MeshBasicMaterial({color:0x224466,wireframe:true,transparent:true,opacity:0.12}));
+  scene.add(sph);objs.push(sph);
+  addLine([0,-Lmag*1.3,0],[0,Lmag*1.3,0],0xffffff,0.4);
+  for(var mi=-l;mi<=l;mi++){
+    var Lz=mi/Math.sqrt(l*(l+1))*Lmag;
+    var Lxy=Math.sqrt(Math.max(0,Lmag*Lmag-Lz*Lz));
+    var isSel=(mi==m);
+    addCircle(0,Lz,0,Lxy,isSel?0xffcc00:0x3366aa,isSel?1:0.35);
+    if(isSel){
+      addLine([0,0,0],[Lxy,Lz,0],0xffcc00,1);
+      addLine([0,0,0],[-Lxy,Lz,0],0xffcc00,0.4);
+    }
+  }
+  sel('iNote').textContent=(2*l+1)+' orientations on sphere, selected m\u2097='+m+' in gold';
+}
+
+function buildSpin(){
+  var sc=Math.sqrt(3)/2*9,sz=0.5*9;
+  var sph=new THREE.Mesh(new THREE.SphereGeometry(sc,32,32),new THREE.MeshBasicMaterial({color:0x333355,wireframe:true,transparent:true,opacity:0.15}));
+  scene.add(sph);objs.push(sph);
+  addLine([0,-sc*1.3,0],[0,sc*1.3,0],0xffffff,0.4);
+  var sxy=Math.sqrt(sc*sc-sz*sz);
+  addCircle(0,sz,0,sxy,0x44ff88,1);
+  addLine([0,0,0],[sxy,sz,0],0x44ff88,1);
+  addCircle(0,-sz,0,sxy,0xff4488,1);
+  addLine([0,0,0],[sxy,-sz,0],0xff4488,1);
+  sel('iNote').textContent='S=\u210F\u221A(3/4)  |  green = spin up m\u209B=+\u00BD  |  pink = spin down m\u209B=\u2212\u00BD';
+}
+
+function addAxes(){
+  addLine([-14,0,0],[14,0,0],0xaa4444,0.25);
+  addLine([0,-14,0],[0,14,0],0x44aa44,0.25);
+  addLine([0,0,-14],[0,0,14],0x4444aa,0.25);
+  var mesh=new THREE.Mesh(new THREE.SphereGeometry(0.38,16,16),new THREE.MeshBasicMaterial({color:0xff5522}));
+  scene.add(mesh);objs.push(mesh);
+}
+
+function setInfo(id,label,val){
+  sel(id).innerHTML=label+' = <b style="color:var(--text-primary);font-weight:500">'+val+'</b>';
+}
+function updateInfo(){
+  var n=+sel('sN').value,l=+sel('sL').value,m=+sel('sM').value;
+  var lnames=['s','p','d','f','g'];
+  sel('orbLabel').textContent=n+(lnames[l]||l)+(l>0?' (m\u2097='+(m>=0?'+':'')+m+')':'');
+  setInfo('iL','L',l>0?'\u210F\u221A'+l*(l+1):'0');
+  setInfo('iLz','Lz',(m>0?'+':'')+m+'\u210F');
+  setInfo('iE','E',(-13.6/n/n).toFixed(2)+' eV');
+  setInfo('ir','\u27E8r\u27E9',((3*n*n-l*(l+1))/2).toFixed(1)+' a\u2080');
+  sel('iNote').textContent='';
+}
+
+function onN(){
+  var n=+sel('sN').value,sl=sel('sL'),curL=+sl.value;
+  sl.innerHTML='';
+  for(var i=0;i<n;i++){var o=document.createElement('option');o.value=i;o.textContent=i;if(i==Math.min(curL,n-1))o.selected=true;sl.appendChild(o);}
+  onL();
+}
+function onL(){
+  var l=+sel('sL').value,sm=sel('sM');
+  sm.innerHTML='';
+  for(var i=-l;i<=l;i++){var o=document.createElement('option');o.value=i;o.textContent=(i>0?'+':'')+i;if(i==0)o.selected=true;sm.appendChild(o);}
+  rebuild();
+}
+
+function rebuild(){
+  clearObjs();
+  addAxes();
+  updateInfo();
+  var cmap=sel('sCm').value;
+  drawColorbar(cmap);
+  sel('cbarRow').style.visibility=(currentView=='cloud'||currentView=='radial')?'visible':'hidden';
+  if(currentView=='cloud')buildCloud();
+  else if(currentView=='radial')buildRadial();
+  else if(currentView=='angular')buildAngular();
+  else buildSpin();
+}
+
+var rotX=0.3,rotY=0,drag=false,lx=0,ly=0;
+canvas.addEventListener('mousedown',function(e){drag=true;lx=e.clientX;ly=e.clientY;canvas.style.cursor='grabbing';});
+window.addEventListener('mouseup',function(){drag=false;canvas.style.cursor='grab';});
+window.addEventListener('mousemove',function(e){if(!drag)return;rotY+=(e.clientX-lx)*0.009;rotX+=(e.clientY-ly)*0.009;lx=e.clientX;ly=e.clientY;});
+canvas.addEventListener('wheel',function(e){e.preventDefault();camera.position.z=Math.max(5,Math.min(90,camera.position.z+e.deltaY*0.05));},{passive:false});
+var tlx=0,tly=0;
+canvas.addEventListener('touchstart',function(e){tlx=e.touches[0].clientX;tly=e.touches[0].clientY;drag=true;},{passive:true});
+canvas.addEventListener('touchmove',function(e){e.preventDefault();rotY+=(e.touches[0].clientX-tlx)*0.012;rotX+=(e.touches[0].clientY-tly)*0.012;tlx=e.touches[0].clientX;tly=e.touches[0].clientY;},{passive:false});
+canvas.addEventListener('touchend',function(){drag=false;});
+
+function animate(){
+  requestAnimationFrame(animate);
+  if(!drag)rotY+=0.004;
+  for(var i=0;i<objs.length;i++){objs[i].rotation.x=rotX;objs[i].rotation.y=rotY;}
+  renderer.render(scene,camera);
+}
+
+rebuild();
+animate();
+</script>
+</body>
+</html>
 <canvas id="cv" style="width:100%;height:440px;display:block;cursor:grab;margin-top:4px"></canvas>
 <div id="cbarRow" style="display:flex;align-items:center;gap:6px;padding:4px 0 2px">
   <span style="font-size:10px;color:var(--color-text-secondary)">low ρ</span>
