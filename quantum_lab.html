@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quantum lab</title>
+<style>
+:root{
+  --text-primary:#1a1a18;--text-secondary:#5f5e5a;--border:rgba(0,0,0,0.15);
+  --surface-1:#f4f3ee;--surface-2:#ffffff;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --text-primary:#f1efe8;--text-secondary:#b4b2a9;--border:rgba(255,255,255,0.18);
+    --surface-1:#1f1f1d;--surface-2:#2a2a28;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--surface-1);color:var(--text-primary);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+#root{max-width:780px;margin:0 auto}
+select,button{font:inherit;font-size:12px;padding:3px 8px;border-radius:6px;border:0.5px solid var(--border);background:var(--surface-2);color:var(--text-primary);cursor:pointer}
+.vb.active,.tab.active{background:var(--text-primary);color:var(--surface-2);border-color:var(--text-primary)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--border)}
+.row label{font-size:12px;color:var(--text-secondary)}
+.info{display:flex;gap:14px;flex-wrap:wrap;padding:6px 0;border-top:0.5px solid var(--border);font-size:12px;color:var(--text-secondary)}
+.info b{color:var(--text-primary);font-weight:500}
+.expl{font-size:13px;line-height:1.6;color:var(--text-secondary);padding:6px 0}
+.expl p{margin:0 0 8px}
+</style>
+</head>
+<body>
+<div id="root">
+
+<div class="row" id="tabs">
+  <button class="tab active" onclick="showMode('hyd',this)">Hydrogen atom</button>
+  <button class="tab" onclick="showMode('tunnel',this)">Tunneling</button>
+  <button class="tab" onclick="showMode('box',this)">Particle in a box</button>
+  <button class="tab" onclick="showMode('sho',this)">Harmonic oscillator</button>
+  <button class="tab" onclick="showMode('unc',this)">Uncertainty</button>
+</div>
+
+<div id="hyd">
+  <div class="row">
+    <button class="vb active" onclick="setView('cloud',this)">Electron cloud</button>
+    <button class="vb" onclick="setView('angular',this)">Angular momentum L</button>
+    <button class="vb" onclick="setView('radial',this)">Radial density</button>
+    <button class="vb" onclick="setView('spin',this)">Spin S</button>
+  </div>
+  <div class="row">
+    <label>n</label>
+    <select id="sN" onchange="onN()"><option>1</option><option selected>2</option><option>3</option><option>4</option></select>
+    <label>l</label>
+    <select id="sL" onchange="onL()"><option>0</option><option selected>1</option></select>
+    <label>m<sub>l</sub></label>
+    <select id="sM" onchange="rebuild()"><option value="-1">-1</option><option value="0" selected>0</option><option value="1">+1</option></select>
+    <label>color</label>
+    <select id="sCm" onchange="rebuild()"><option value="plasma">plasma</option><option value="fire">fire</option><option value="cool">cool</option><option value="viridis">viridis</option></select>
+    <label>pts</label>
+    <select id="sPts" onchange="rebuild()"><option value="4000">4k</option><option value="8000" selected>8k</option><option value="15000">15k</option></select>
+    <button onclick="rebuild()" aria-label="Resample">&#8634;</button>
+    <span id="orbLabel" style="font-size:14px;font-weight:500;margin-left:4px">2p</span>
+  </div>
+  <canvas id="cv" style="width:100%;height:440px;display:block;cursor:grab;margin-top:4px;touch-action:none"></canvas>
+  <div id="cbarRow" style="display:flex;align-items:center;gap:6px;padding:4px 0 2px">
+    <span style="font-size:11px;color:var(--text-secondary)">low &rho;</span>
+    <canvas id="cbar" width="400" height="14" style="flex:1;border-radius:4px;height:12px;min-width:0"></canvas>
+    <span style="font-size:11px;color:var(--text-secondary)">high &rho;</span>
+  </div>
+  <div class="info">
+    <span id="iL"></span><span id="iLz"></span><span id="iE"></span><span id="ir"></span><span id="iNote"></span>
+  </div>
+</div>
+
+<div id="lab" style="display:none">
+  <div class="row" id="labCtl"></div>
+  <canvas id="lc" style="width:100%;height:360px;display:block;margin-top:4px"></canvas>
+  <div class="info" id="labInfo"></div>
+  <div class="expl" id="labText"></div>
+</div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ===================== PHYSICS (pure functions, no DOM) ===================== */
+function fact(n){var r=1;for(var i=2;i<=n;i++)r*=i;return r;}
+function laguerre(nr,alpha,x){
+  if(nr<=0)return 1;
+  if(nr==1)return 1+alpha-x;
+  var L0=1,L1=1+alpha-x,Lk=0;
+  for(var k=2;k<=nr;k++){Lk=((2*k-1+alpha-x)*L1-(k-1+alpha)*L0)/k;L0=L1;L1=Lk;}
+  return L1;
+}
+function legendre(l,m,x){
+  var am=Math.abs(m),pmm=1;
+  if(am>0){var s=Math.sqrt(Math.max(0,1-x*x));for(var i=1;i<=am;i++)pmm*=-(2*i-1)*s;}
+  if(l==am)return pmm;
+  var p1=(2*am+1)*x*pmm;
+  if(l==am+1)return p1;
+  var pll=0;
+  for(var ll=am+2;ll<=l;ll++){pll=((2*ll-1)*x*p1-(ll+am-1)*pmm)/(ll-am);pmm=p1;p1=pll;}
+  return pll;
+}
+function psi2(n,l,m,r,th){
+  var nr=n-l-1;if(nr<0)return 0;
+  var rho=2*r/n;
+  var nR=Math.sqrt(Math.pow(2/n,3)*fact(nr)/(2*n*Math.pow(fact(n+l),3)));
+  var R=nR*Math.exp(-rho/2)*Math.pow(rho,l)*laguerre(nr,2*l+1,rho);
+  var am=Math.abs(m);
+  var nA=Math.sqrt((2*l+1)/(4*Math.PI)*fact(l-am)/fact(l+am));
+  var A=nA*legendre(l,am,Math.cos(th));
+  return R*A*R*A;
+}
+
+/* Transmission through a rectangular barrier, plane wave, hbar = m = 1 */
+function tunnelT(E,V0,a){
+  if(Math.abs(E-V0)<1e-9)return 1/(1+V0*a*a/2);
+  if(E<V0){
+    var kap=Math.sqrt(2*(V0-E)),sh=Math.sinh(kap*a);
+    return 1/(1+V0*V0*sh*sh/(4*E*(V0-E)));
+  }
+  var q=Math.sqrt(2*(E-V0)),s=Math.sin(q*a);
+  return 1/(1+V0*V0*s*s/(4*E*(E-V0)));
+}
+
+/* Harmonic oscillator eigenfunction, hbar = m = omega = 1 */
+function psiSHO(n,x){
+  var H0=1,H1=2*x,Hn=(n===0)?1:H1;
+  for(var k=1;k<n;k++){Hn=2*x*H1-2*k*H0;H0=H1;H1=Hn;}
+  return Hn*Math.exp(-x*x/2)/Math.sqrt(Math.pow(2,n)*fact(n)*Math.sqrt(Math.PI));
+}
+
+/* Time-dependent Schrodinger equation, hbar = m = 1, staggered leapfrog (Visscher):
+   R at integer steps, I at half steps. */
+var TN={N:1000,dx:0.1,dt:0.005,x0:-20,sig:3,xmin:-50,j0:0,nb:0,E:2,V0:4,a:0.6,t:0,tstop:0,spf:16,running:false,
+        R:null,Ih:null,In:null,V:null,dens:null,mask:null};
+TN.init=function(E,V0,a){
+  var N=this.N,dx=this.dx,dt=this.dt,i;
+  if(!this.R){this.R=new Float64Array(N);this.Ih=new Float64Array(N);this.In=new Float64Array(N);
+    this.V=new Float64Array(N);this.dens=new Float64Array(N);this.mask=new Float64Array(N);}
+  this.E=E;this.V0=V0;this.nb=Math.max(1,Math.round(a/dx));this.a=this.nb*dx;
+  this.j0=N/2-Math.floor(this.nb/2);
+  var k=Math.sqrt(2*E),A=Math.pow(2*Math.PI*this.sig*this.sig,-0.25),I0=new Float64Array(N);
+  for(i=0;i<N;i++){
+    var x=this.xmin+i*dx,g=A*Math.exp(-(x-this.x0)*(x-this.x0)/(4*this.sig*this.sig));
+    this.V[i]=(i>=this.j0&&i<this.j0+this.nb)?V0:0;
+    this.R[i]=g*Math.cos(k*x);I0[i]=g*Math.sin(k*x);
+    this.dens[i]=this.R[i]*this.R[i]+I0[i]*I0[i];
+    var s=0,w=60;
+    if(i<w)s=(w-i)/w;else if(i>=N-w)s=(i-(N-w-1))/w;
+    this.mask[i]=Math.exp(-0.02*s*s);
+  }
+  var c=0.5/(dx*dx);
+  for(i=0;i<N;i++)this.Ih[i]=0;
+  for(i=1;i<N-1;i++){
+    var hr=-c*(this.R[i+1]-2*this.R[i]+this.R[i-1])+this.V[i]*this.R[i];
+    this.Ih[i]=I0[i]+0.5*dt*hr;
+  }
+  this.t=0;this.tstop=(Math.abs(this.x0)+25)/k;
+  this.spf=Math.max(1,Math.ceil(this.tstop/dt/300));
+  this.running=true;
+};
+TN.step=function(){
+  var N=this.N,R=this.R,Ih=this.Ih,In=this.In,V=this.V,D=this.dens,M=this.mask;
+  var c=0.5/(this.dx*this.dx),dt=this.dt,i;
+  for(i=1;i<N-1;i++){
+    var hr=-c*(R[i+1]-2*R[i]+R[i-1])+V[i]*R[i];
+    In[i]=Ih[i]-dt*hr;
+    D[i]=R[i]*R[i]+Ih[i]*In[i];
+  }
+  for(i=1;i<N-1;i++){
+    var hi=-c*(In[i+1]-2*In[i]+In[i-1])+V[i]*In[i];
+    R[i]+=dt*hi;
+  }
+  for(i=0;i<N;i++){R[i]*=M[i];In[i]*=M[i];}
+  this.Ih=In;this.In=Ih;this.t+=dt;
+};
+TN.parts=function(){
+  var D=this.dens,dx=this.dx,l=0,m=0,r=0,i;
+  for(i=0;i<this.N;i++){
+    if(i<this.j0)l+=D[i];else if(i<this.j0+this.nb)m+=D[i];else r+=D[i];
+  }
+  return {left:l*dx,inside:m*dx,right:r*dx};
+};
+/* ===================== END PHYSICS ===================== */
+
+/* ===================== HYDROGEN (3D) ===================== */
+var currentView='cloud';
+function setView(v,btn){
+  currentView=v;
+  document.querySelectorAll('.vb').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  rebuild();
+}
+var CMAPS={
+  plasma:function(t){return [Math.min(1,0.1+t*1.5+t*t*0.5),Math.max(0,Math.min(1,t*1.5-0.3)),Math.min(1,0.9-t*0.8)];},
+  fire:function(t){return [Math.min(1,t*2.5),Math.min(1,Math.max(0,t*2.5-1)),Math.min(1,Math.max(0,t*2.5-2))];},
+  cool:function(t){return [t,0.4+t*0.2,1-t*0.6];},
+  viridis:function(t){return [Math.max(0,Math.min(1,-0.1+2.5*t-2*t*t)),Math.max(0,Math.min(1,0.1+1.8*t-t*t)),Math.max(0,Math.min(1,0.4+0.6*t-0.8*t*t))];}
+};
+function drawColorbar(cmap){
+  var cb=document.getElementById('cbar'),ctx=cb.getContext('2d'),w=cb.width,h=cb.height;
+  for(var i=0;i<w;i++){
+    var c=CMAPS[cmap](i/w);
+    ctx.fillStyle='rgb('+Math.round(c[0]*255)+','+Math.round(c[1]*255)+','+Math.round(c[2]*255)+')';
+    ctx.fillRect(i,0,1,h);
+  }
+}
+function sel(id){return document.getElementById(id);}
+
+var canvas=sel('cv');
+var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true});
+renderer.setClearColor(0x080810,1);
+var scene=new THREE.Scene();
+var camera=new THREE.PerspectiveCamera(45,1.5,0.1,2000);
+camera.position.z=30;
+function resize(){
+  var w=canvas.clientWidth||660,h=440;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h;
+  camera.updateProjectionMatrix();
+}
+var objs=[];
+function clearObjs(){
+  for(var i=0;i<objs.length;i++){
+    scene.remove(objs[i]);
+    if(objs[i].geometry)objs[i].geometry.dispose();
+    if(objs[i].material)objs[i].material.dispose();
+  }
+  objs=[];
+}
+function addLine(p1,p2,color,opacity){
+  var g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p1[0],p1[1],p1[2]),new THREE.Vector3(p2[0],p2[1],p2[2])]);
+  var m=new THREE.LineBasicMaterial({color:color,transparent:true,opacity:opacity||1});
+  var l=new THREE.Line(g,m);scene.add(l);objs.push(l);
+}
+function addCircle(cx,cy,cz,r,color,opacity){
+  var pts=[];
+  for(var i=0;i<=64;i++){var a=i/64*Math.PI*2;pts.push(new THREE.Vector3(cx+r*Math.cos(a),cy,cz+r*Math.sin(a)));}
+  var g=new THREE.BufferGeometry().setFromPoints(pts);
+  var m=new THREE.LineBasicMaterial({color:color,transparent:true,opacity:opacity||1});
+  var l=new THREE.Line(g,m);scene.add(l);objs.push(l);
+}
+function orbRmax(n){return 2.4*n*n+8*n;}
+function polar(r,th,ph,out){out.push(r*Math.sin(th)*Math.cos(ph),r*Math.cos(th),r*Math.sin(th)*Math.sin(ph));}
+function finishPoints(pos,col,maxR,size,opacity){
+  var k=12/Math.max(maxR,1e-6);
+  for(var i=0;i<pos.length;i++)pos[i]*=k;
+  var g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));
+  g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(col),3));
+  var mat=new THREE.PointsMaterial({size:size,vertexColors:true,transparent:true,opacity:opacity});
+  var pts=new THREE.Points(g,mat);scene.add(pts);objs.push(pts);
+}
+function buildCloud(){
+  var n=+sel('sN').value,l=+sel('sL').value,m=+sel('sM').value,N=+sel('sPts').value,cmap=sel('sCm').value;
+  var rmax=orbRmax(n),pmax=0;
+  for(var i=1;i<=300;i++){
+    var r0=i/300*rmax;
+    for(var j=0;j<=40;j++){
+      var p0=psi2(n,l,m,r0,Math.acos(-1+2*j/40))*r0*r0;
+      if(p0>pmax)pmax=p0;
+    }
+  }
+  pmax*=1.25;
+  var pos=[],col=[],count=0,tries=0,maxR=0;
+  while(count<N&&tries<N*150){
+    tries++;
+    var r=Math.random()*rmax,th=Math.acos(2*Math.random()-1),ph=Math.random()*Math.PI*2;
+    var p=psi2(n,l,m,r,th)*r*r;
+    if(Math.random()<p/pmax){
+      polar(r,th,ph,pos);
+      if(r>maxR)maxR=r;
+      var c=CMAPS[cmap](Math.min(1,Math.pow(p/pmax,0.45)));
+      col.push(c[0],c[1],c[2]);
+      count++;
+    }
+  }
+  finishPoints(pos,col,maxR,0.18,0.85);
+  sel('iNote').textContent='cloud radius \u2248 '+Math.round(maxR)+' a\u2080 (auto-scaled), vertical axis = z';
+}
+function buildRadial(){
+  var n=+sel('sN').value,l=+sel('sL').value,m=+sel('sM').value,cmap=sel('sCm').value;
+  var rmax=orbRmax(n),Nr=150,Nth=60,Nph=36,pmax=0;
+  for(var ir=1;ir<Nr;ir++){
+    var r=ir/Nr*rmax;
+    for(var it=0;it<Nth;it++){
+      var p=psi2(n,l,m,r,it/Nth*Math.PI)*r*r*Math.sin(it/Nth*Math.PI);
+      if(p>pmax)pmax=p;
+    }
+  }
+  pmax*=1.1;
+  var pos=[],col=[],maxR=0;
+  for(var ir2=1;ir2<Nr;ir2++){
+    var r2=ir2/Nr*rmax;
+    for(var it2=0;it2<Nth;it2++){
+      var th=it2/Nth*Math.PI;
+      var t=psi2(n,l,m,r2,th)*r2*r2*Math.sin(th)/pmax;
+      if(t<0.015)continue;
+      if(r2>maxR)maxR=r2;
+      var c=CMAPS[cmap](Math.min(1,Math.pow(t,0.4)));
+      for(var ip=0;ip<Nph;ip++){polar(r2,th,ip/Nph*Math.PI*2,pos);col.push(c[0],c[1],c[2]);}
+    }
+  }
+  finishPoints(pos,col,maxR,0.14,0.7);
+  sel('iNote').textContent='shell radius \u2248 '+Math.round(maxR)+' a\u2080 (auto-scaled), vertical axis = z';
+}
+function buildAngular(){
+  var l=+sel('sL').value,m=+sel('sM').value,sc=9;
+  if(l==0){
+    var g=new THREE.SphereGeometry(1.2,16,16);
+    var mat=new THREE.MeshBasicMaterial({color:0x4488ff,wireframe:true,transparent:true,opacity:0.4});
+    var mesh=new THREE.Mesh(g,mat);scene.add(mesh);objs.push(mesh);
+    sel('iNote').textContent='l=0: L=0, single state, spherically symmetric';
+    return;
+  }
+  var Lmag=Math.sqrt(l*(l+1))*sc/Math.sqrt(l*(l+1)+1);
+  var sph=new THREE.Mesh(new THREE.SphereGeometry(Lmag,32,32),new THREE.MeshBasicMaterial({color:0x224466,wireframe:true,transparent:true,opacity:0.12}));
+  scene.add(sph);objs.push(sph);
+  addLine([0,-Lmag*1.3,0],[0,Lmag*1.3,0],0xffffff,0.4);
+  for(var mi=-l;mi<=l;mi++){
+    var Lz=mi/Math.sqrt(l*(l+1))*Lmag;
+    var Lxy=Math.sqrt(Math.max(0,Lmag*Lmag-Lz*Lz));
+    var isSel=(mi==m);
+    addCircle(0,Lz,0,Lxy,isSel?0xffcc00:0x3366aa,isSel?1:0.35);
+    if(isSel){addLine([0,0,0],[Lxy,Lz,0],0xffcc00,1);addLine([0,0,0],[-Lxy,Lz,0],0xffcc00,0.4);}
+  }
+  sel('iNote').textContent=(2*l+1)+' orientations on sphere, selected m\u2097='+m+' in gold';
+}
+function buildSpin(){
+  var sc=Math.sqrt(3)/2*9,sz=0.5*9;
+  var sph=new THREE.Mesh(new THREE.SphereGeometry(sc,32,32),new THREE.MeshBasicMaterial({color:0x333355,wireframe:true,transparent:true,opacity:0.15}));
+  scene.add(sph);objs.push(sph);
+  addLine([0,-sc*1.3,0],[0,sc*1.3,0],0xffffff,0.4);
+  var sxy=Math.sqrt(sc*sc-sz*sz);
+  addCircle(0,sz,0,sxy,0x44ff88,1);addLine([0,0,0],[sxy,sz,0],0x44ff88,1);
+  addCircle(0,-sz,0,sxy,0xff4488,1);addLine([0,0,0],[sxy,-sz,0],0xff4488,1);
+  sel('iNote').textContent='S=\u210F\u221A(3/4)  |  green = spin up m\u209B=+\u00BD  |  pink = spin down m\u209B=\u2212\u00BD';
+}
+function addAxes(){
+  addLine([-14,0,0],[14,0,0],0xaa4444,0.25);
+  addLine([0,-14,0],[0,14,0],0x44aa44,0.25);
+  addLine([0,0,-14],[0,0,14],0x4444aa,0.25);
+  var mesh=new THREE.Mesh(new THREE.SphereGeometry(0.38,16,16),new THREE.MeshBasicMaterial({color:0xff5522}));
+  scene.add(mesh);objs.push(mesh);
+}
+function setInfo(id,label,val){
+  sel(id).innerHTML=label+' = <b>'+val+'</b>';
+}
+function updateInfo(){
+  var n=+sel('sN').value,l=+sel('sL').value,m=+sel('sM').value;
+  var lnames=['s','p','d','f','g'];
+  sel('orbLabel').textContent=n+(lnames[l]||l)+(l>0?' (m\u2097='+(m>=0?'+':'')+m+')':'');
+  setInfo('iL','L',l>0?'\u210F\u221A'+l*(l+1):'0');
+  setInfo('iLz','Lz',(m>0?'+':'')+m+'\u210F');
+  setInfo('iE','E',(-13.6/n/n).toFixed(2)+' eV');
+  setInfo('ir','\u27E8r\u27E9',((3*n*n-l*(l+1))/2).toFixed(1)+' a\u2080');
+  sel('iNote').textContent='';
+}
+function onN(){
+  var n=+sel('sN').value,sl=sel('sL'),curL=+sl.value;
+  sl.innerHTML='';
+  for(var i=0;i<n;i++){var o=document.createElement('option');o.value=i;o.textContent=i;if(i==Math.min(curL,n-1))o.selected=true;sl.appendChild(o);}
+  onL();
+}
+function onL(){
+  var l=+sel('sL').value,sm=sel('sM');
+  sm.innerHTML='';
+  for(var i=-l;i<=l;i++){var o=document.createElement('option');o.value=i;o.textContent=(i>0?'+':'')+i;if(i==0)o.selected=true;sm.appendChild(o);}
+  rebuild();
+}
+function rebuild(){
+  clearObjs();addAxes();updateInfo();
+  var cmap=sel('sCm').value;
+  drawColorbar(cmap);
+  sel('cbarRow').style.visibility=(currentView=='cloud'||currentView=='radial')?'visible':'hidden';
+  if(currentView=='cloud')buildCloud();
+  else if(currentView=='radial')buildRadial();
+  else if(currentView=='angular')buildAngular();
+  else buildSpin();
+}
+var rotX=0.3,rotY=0,drag=false,lx0=0,ly0=0;
+canvas.addEventListener('mousedown',function(e){drag=true;lx0=e.clientX;ly0=e.clientY;canvas.style.cursor='grabbing';});
+window.addEventListener('mouseup',function(){drag=false;canvas.style.cursor='grab';});
+window.addEventListener('mousemove',function(e){if(!drag)return;rotY+=(e.clientX-lx0)*0.009;rotX+=(e.clientY-ly0)*0.009;lx0=e.clientX;ly0=e.clientY;});
+canvas.addEventListener('wheel',function(e){e.preventDefault();camera.position.z=Math.max(5,Math.min(90,camera.position.z+e.deltaY*0.05));},{passive:false});
+var tlx=0,tly=0;
+canvas.addEventListener('touchstart',function(e){tlx=e.touches[0].clientX;tly=e.touches[0].clientY;drag=true;},{passive:true});
+canvas.addEventListener('touchmove',function(e){e.preventDefault();rotY+=(e.touches[0].clientX-tlx)*0.012;rotX+=(e.touches[0].clientY-tly)*0.012;tlx=e.touches[0].clientX;tly=e.touches[0].clientY;},{passive:false});
+canvas.addEventListener('touchend',function(){drag=false;});
+function animate(){
+  requestAnimationFrame(animate);
+  if(sel('hyd').style.display==='none')return;
+  if(!drag)rotY+=0.004;
+  for(var i=0;i<objs.length;i++){objs[i].rotation.x=rotX;objs[i].rotation.y=rotY;}
+  renderer.render(scene,camera);
+}
+
+/* ===================== 2D LAB ===================== */
+var lc=sel('lc'),lx=lc.getContext('2d'),LW=640,LH=360,labMode=null,MODS={};
+function labResize(){
+  var dpr=Math.min(window.devicePixelRatio||1,2);
+  LW=lc.clientWidth||640;LH=360;
+  lc.width=Math.round(LW*dpr);lc.height=Math.round(LH*dpr);
+  lx.setTransform(dpr,0,0,dpr,0,0);
+}
+function clearLab(){lx.fillStyle='#080810';lx.fillRect(0,0,LW,LH);}
+function txt(s,x,y,col,align){lx.fillStyle=col||'#b4b2a9';lx.font='12px system-ui,sans-serif';lx.textAlign=align||'left';lx.fillText(s,x,y);}
+function line(x1,y1,x2,y2,col,w,dash){
+  lx.beginPath();lx.moveTo(x1,y1);lx.lineTo(x2,y2);
+  lx.strokeStyle=col;lx.lineWidth=w||1;lx.setLineDash(dash||[]);lx.stroke();lx.setLineDash([]);
+}
+function sliderHTML(id,label,min,max,step,val){
+  return '<label>'+label+'</label><input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+val+'" style="width:130px"><span id="'+id+'V" style="font-size:12px;min-width:30px;color:var(--text-primary)"></span>';
+}
+function bindSlider(id,fn){
+  var el=sel(id),out=sel(id+'V');
+  out.textContent=el.value;
+  el.addEventListener('input',function(){out.textContent=el.value;fn();});
+}
+function pct(x){return (x*100).toFixed(1)+'%';}
+
+function showMode(m,btn){
+  document.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  if(m==='hyd'){
+    sel('lab').style.display='none';sel('hyd').style.display='block';labMode=null;resize();
+  }else{
+    sel('hyd').style.display='none';sel('lab').style.display='block';labMode=m;labResize();MODS[m].setup();
+  }
+}
+
+/* ---------- Tunneling ---------- */
+MODS.tunnel={
+  setup:function(){
+    sel('labCtl').innerHTML=sliderHTML('tE','Energy E',0.5,5,0.1,2)+sliderHTML('tV','Barrier V\u2080',0.5,8,0.1,4)+sliderHTML('tA','Width a',0.2,2,0.1,0.6)+'<button id="tRun">Run again</button>';
+    var r=function(){MODS.tunnel.reset();};
+    bindSlider('tE',r);bindSlider('tV',r);bindSlider('tA',r);
+    sel('tRun').onclick=r;
+    sel('labText').innerHTML=
+      '<p>A wave packet moves toward a rectangular barrier (units: \u210F = m = 1). A classical particle with E &lt; V\u2080 would always bounce back. The wave function instead decays inside the barrier, and if the barrier is thin enough a part of it comes out the other side, so there is a real chance of finding the particle there. The chance drops very quickly as the barrier gets wider or taller.</p>'+
+      '<p>The theory value is for a single energy (a plane wave). A packet contains a spread of energies, and for E &lt; V\u2080 the higher-energy part tunnels much more easily, so the measured transmission is often higher than the theory value. The packet is simulated numerically, so expect small numerical errors of a few percent.</p>';
+    this.reset();
+  },
+  reset:function(){
+    TN.init(+sel('tE').value,+sel('tV').value,+sel('tA').value);
+    this.draw();
+  },
+  frame:function(){
+    if(TN.running){
+      for(var s=0;s<TN.spf;s++){TN.step();if(TN.t>=TN.tstop){TN.running=false;break;}}
+      this.draw();
+    }
+  },
+  draw:function(){
+    clearLab();
+    var yb=LH-34,top=26,ph=yb-top;
+    function X(x){return (x+35)/70*LW;}
+    function EY(e){return yb-e/9*ph;}
+    var xl=TN.xmin+TN.j0*TN.dx-TN.dx/2,xr=xl+TN.nb*TN.dx;
+    var bw=Math.max(3,X(xr)-X(xl)),bx=X((xl+xr)/2)-bw/2;
+    lx.fillStyle='rgba(240,120,70,0.38)';lx.fillRect(bx,EY(TN.V0),bw,yb-EY(TN.V0));
+    var sc=ph*0.45/0.14;
+    lx.beginPath();lx.moveTo(X(-35),yb);
+    for(var i=150;i<850;i++){lx.lineTo(X(TN.xmin+i*TN.dx),yb-TN.dens[i]*sc);}
+    lx.lineTo(X(35),yb);lx.closePath();
+    lx.fillStyle='rgba(125,211,252,0.45)';lx.fill();
+    lx.strokeStyle='#7dd3fc';lx.lineWidth=1.2;lx.stroke();
+    line(0,EY(TN.E),LW,EY(TN.E),'#fde047',1,[6,4]);
+    line(0,yb,LW,yb,'#475569',1);
+    for(var t=-30;t<=30;t+=10){line(X(t),yb,X(t),yb+4,'#475569',1);txt(String(t),X(t),yb+17,'#94a3b8','center');}
+    txt('E = '+TN.E.toFixed(1),6,EY(TN.E)-5,'#fde047');
+    txt('V\u2080 = '+TN.V0.toFixed(1),X((xl+xr)/2),EY(TN.V0)-5,'#fb923c','center');
+    txt('blue: probability density |\u03C8|\u00B2 (arbitrary height scale)   dashed: packet energy   orange: barrier',6,16,'#94a3b8');
+    var P=TN.parts(),Tth=tunnelT(TN.E,TN.V0,TN.a);
+    sel('labInfo').innerHTML=
+      '<span>Theory T(E), plane wave = <b>'+pct(Tth)+'</b></span>'+
+      '<span>left of barrier = <b>'+pct(P.left)+'</b></span>'+
+      '<span>inside = <b>'+pct(P.inside)+'</b></span>'+
+      '<span>right of barrier = <b>'+pct(P.right)+'</b></span>'+
+      '<span>total = <b>'+pct(P.left+P.inside+P.right)+'</b></span>'+
+      '<span>'+(TN.E<TN.V0?'E &lt; V\u2080: classically forbidden':'E \u2265 V\u2080: classically allowed, partial reflection still happens')+'</span>'+
+      '<span>'+(TN.running?'running':'finished')+'</span>';
+  }
+};
+
+/* ---------- Particle in a box ---------- */
+MODS.box={
+  setup:function(){
+    sel('labCtl').innerHTML=sliderHTML('bN','n',1,6,1,1)+'<label>state</label><select id="bM"><option value="single">energy eigenstate</option><option value="sup">superposition of n=1 and n=2</option></select>';
+    var d=function(){MODS.box.draw(performance.now());};
+    bindSlider('bN',d);
+    sel('bM').onchange=function(){sel('bN').disabled=(sel('bM').value==='sup');d();};
+    sel('labText').innerHTML=
+      '<p>An infinite square well of width L (units: \u210F = m = L = 1). The wave function must vanish at both walls, so only standing waves fit: \u03C8\u2099 = \u221A(2/L)\u00B7sin(n\u03C0x/L), with energies E\u2099 = n\u00B2\u03C0\u00B2\u210F\u00B2/(2mL\u00B2). The lowest energy is not zero (zero-point energy), and \u03C8\u2099 has n\u22121 nodes inside the box.</p>'+
+      '<p>In a superposition of n=1 and n=2 the probability density is not constant: it sloshes back and forth at angular frequency (E\u2082\u2212E\u2081)/\u210F. The animation is slowed down. Energy eigenstates never change their density.</p>';
+    d();
+  },
+  frame:function(now){if(sel('bM').value==='sup')this.draw(now);},
+  draw:function(now){
+    clearLab();
+    var sup=sel('bM').value==='sup',n=+sel('bN').value;
+    var yb=LH-34,top=24,yMin=-1.8,yMax=4.4;
+    function X(x){return (x+0.15)/1.3*LW;}
+    function Y(v){return yb-(v-yMin)/(yMax-yMin)*(yb-top);}
+    var M=400,i,x,dens=[],psi=[];
+    var phase=(now/3000)*2*Math.PI,cs=Math.cos(phase),xm=0,wsum=0;
+    for(i=0;i<=M;i++){
+      x=i/M;
+      if(sup){
+        var p1=Math.sqrt(2)*Math.sin(Math.PI*x),p2=Math.sqrt(2)*Math.sin(2*Math.PI*x);
+        dens.push(0.5*(p1*p1+p2*p2)+p1*p2*cs);psi.push(0);
+      }else{
+        var p=Math.sqrt(2)*Math.sin(n*Math.PI*x);
+        psi.push(p);dens.push(p*p);
+      }
+      xm+=x*dens[i];wsum+=dens[i];
+    }
+    xm=xm/wsum;
+    lx.beginPath();lx.moveTo(X(0),Y(0));
+    for(i=0;i<=M;i++)lx.lineTo(X(i/M),Y(dens[i]));
+    lx.lineTo(X(1),Y(0));lx.closePath();
+    lx.fillStyle='rgba(251,146,60,0.35)';lx.fill();
+    lx.strokeStyle='#fb923c';lx.lineWidth=1.5;lx.stroke();
+    if(!sup){
+      lx.beginPath();
+      for(i=0;i<=M;i++){var px=X(i/M),py=Y(psi[i]);if(i===0)lx.moveTo(px,py);else lx.lineTo(px,py);}
+      lx.strokeStyle='#7dd3fc';lx.lineWidth=1.5;lx.stroke();
+    }
+    line(0,Y(0),LW,Y(0),'#475569',1);
+    line(X(0),top,X(0),yb,'#cbd5e1',3);line(X(1),top,X(1),yb,'#cbd5e1',3);
+    txt('0',X(0),yb+17,'#94a3b8','center');txt('L',X(1),yb+17,'#94a3b8','center');
+    if(sup){
+      line(X(xm),top,X(xm),yb,'#fde047',1,[5,4]);
+      txt('orange: |\u03C8(x,t)|\u00B2   dashed: average position \u27E8x\u27E9',6,16,'#94a3b8');
+      sel('labInfo').innerHTML='<span>\u27E8x\u27E9 = <b>'+xm.toFixed(2)+' L</b></span><span>E\u2081 = <b>'+(Math.PI*Math.PI/2).toFixed(2)+'</b>, E\u2082 = <b>'+(2*Math.PI*Math.PI).toFixed(2)+'</b> (units \u210F\u00B2/mL\u00B2)</span><span>oscillation at \u03C9 = (E\u2082\u2212E\u2081)/\u210F</span>';
+    }else{
+      txt('blue: wave function \u03C8(x)   orange: probability density |\u03C8|\u00B2',6,16,'#94a3b8');
+      sel('labInfo').innerHTML='<span>n = <b>'+n+'</b></span><span>E\u2099 = <b>'+(n*n*Math.PI*Math.PI/2).toFixed(2)+'</b> (units \u210F\u00B2/mL\u00B2) = <b>'+(n*n)+' E\u2081</b></span><span>nodes inside = <b>'+(n-1)+'</b></span>';
+    }
+  }
+};
+
+/* ---------- Harmonic oscillator ---------- */
+MODS.sho={
+  setup:function(){
+    sel('labCtl').innerHTML=sliderHTML('oN','n',0,8,1,2)+'<label>show</label><select id="oM"><option value="psi">wave function \u03C8</option><option value="dens">density |\u03C8|\u00B2</option></select>';
+    var d=function(){MODS.sho.draw();};
+    bindSlider('oN',d);sel('oM').onchange=d;
+    sel('labText').innerHTML=
+      '<p>A particle in the potential V = \u00BDm\u03C9\u00B2x\u00B2 (units: \u210F = m = \u03C9 = 1). The allowed energies are evenly spaced, E\u2099 = (n+\u00BD)\u210F\u03C9, and \u03C8\u2099 has n nodes. Even n=0 has energy \u00BD\u210F\u03C9, not zero.</p>'+
+      '<p>The red parts of the curve are outside the classical turning points x = \u00B1\u221A(2n+1). A classical particle with that energy could never be there, but the wave function reaches into that region. This is the same leaking effect that makes tunneling possible. For n=0 about 16% of the probability lies in the forbidden region.</p>';
+    d();
+  },
+  frame:function(){},
+  draw:function(){
+    clearLab();
+    var n=+sel('oN').value,dens=sel('oM').value==='dens';
+    var yb=LH-34,top=24,ymin=-0.4,ymax=9.8;
+    function X(x){return (x+6)/12*LW;}
+    function Y(e){return yb-(e-ymin)/(ymax-ymin)*(yb-top);}
+    var E=n+0.5,xt=Math.sqrt(2*n+1),k,x;
+    for(k=0;k<=8;k++){line(0,Y(k+0.5),LW,Y(k+0.5),k===n?'#fde047':'#1e293b',1,k===n?[6,4]:[]);txt('n='+k,6,Y(k+0.5)-3,k===n?'#fde047':'#475569');}
+    lx.beginPath();var started=false;
+    for(x=-6;x<=6.0001;x+=0.05){
+      var v=x*x/2;
+      if(v>ymax){started=false;continue;}
+      if(!started){lx.moveTo(X(x),Y(v));started=true;}else lx.lineTo(X(x),Y(v));
+    }
+    lx.strokeStyle='#94a3b8';lx.lineWidth=2;lx.stroke();
+    line(X(-xt),Y(E),X(-xt),yb,'#94a3b8',1,[3,4]);line(X(xt),Y(E),X(xt),yb,'#94a3b8',1,[3,4]);
+    var px=null,py=null;
+    for(x=-6;x<=6.0001;x+=0.02){
+      var f=psiSHO(n,x);if(dens)f=f*f;
+      var cx=X(x),cy=Y(E+1.3*f);
+      if(px!==null){
+        lx.beginPath();lx.moveTo(px,py);lx.lineTo(cx,cy);
+        lx.strokeStyle=(Math.abs(x)>xt)?'#f87171':'#7dd3fc';lx.lineWidth=2;lx.stroke();
+      }
+      px=cx;py=cy;
+    }
+    line(0,yb,LW,yb,'#475569',1);
+    for(var t=-4;t<=4;t+=2){line(X(t),yb,X(t),yb+4,'#475569',1);txt(String(t),X(t),yb+17,'#94a3b8','center');}
+    txt('gray: potential \u00BDx\u00B2   dotted: classical turning points   red: forbidden region',6,16,'#94a3b8');
+    var pf=0,norm=0,h=0.005;
+    for(x=-10;x<=10.0001;x+=h){var q=psiSHO(n,x);q=q*q;norm+=q*h;if(Math.abs(x)>xt)pf+=q*h;}
+    sel('labInfo').innerHTML='<span>n = <b>'+n+'</b></span><span>E\u2099 = <b>'+E.toFixed(1)+' \u210F\u03C9</b></span><span>turning points = <b>\u00B1'+xt.toFixed(2)+'</b></span><span>P(forbidden region) = <b>'+pct(pf/norm)+'</b></span><span>parity = <b>'+(n%2===0?'even':'odd')+'</b></span>';
+  }
+};
+
+/* ---------- Uncertainty principle ---------- */
+MODS.unc={
+  setup:function(){
+    sel('labCtl').innerHTML=sliderHTML('uS','Position width \u03C3',0.3,3,0.1,1);
+    bindSlider('uS',function(){MODS.unc.draw();});
+    sel('labText').innerHTML=
+      '<p>Units: \u210F = 1. A Gaussian wave packet has a position spread \u0394x = \u03C3 and a momentum spread \u0394p = \u210F/(2\u03C3). Squeeze one and the other widens, and their product stays at \u210F/2. That is the smallest product quantum mechanics allows (\u0394x\u00B7\u0394p \u2265 \u210F/2); any other shape gives a larger value.</p>'+
+      '<p>This is about how spread out the state\u2019s distributions are. It is not about a measurement disturbing the particle or an instrument being imprecise.</p>';
+    this.draw();
+  },
+  frame:function(){},
+  draw:function(){
+    clearLab();
+    var s=+sel('uS').value,sp=1/(2*s),pw=LW/2,pad=18,yb=LH-34,top=34;
+    function PX(x,panel){return panel*pw+pad+(x+10)/20*(pw-2*pad);}
+    function panel(panel,sd,ymax,title,sym,col,fill){
+      var i,x,v;
+      function Y(val){return yb-val/ymax*(yb-top);}
+      lx.beginPath();lx.moveTo(PX(-10,panel),yb);
+      for(i=0;i<=400;i++){x=-10+i*0.05;v=Math.exp(-x*x/(2*sd*sd))/(sd*Math.sqrt(2*Math.PI));lx.lineTo(PX(x,panel),Y(v));}
+      lx.lineTo(PX(10,panel),yb);lx.closePath();
+      lx.fillStyle=fill;lx.fill();lx.strokeStyle=col;lx.lineWidth=1.5;lx.stroke();
+      line(PX(-sd,panel),top,PX(-sd,panel),yb,'#fde047',1,[4,4]);
+      line(PX(sd,panel),top,PX(sd,panel),yb,'#fde047',1,[4,4]);
+      line(PX(-10,panel),yb,PX(10,panel),yb,'#475569',1);
+      txt(title,panel*pw+pad,20,'#cbd5e1');
+      txt('\u00B1'+sym+' = '+sd.toFixed(2),PX(0,panel),yb+17,'#fde047','center');
+    }
+    panel(0,s,1.5,'Position  |\u03C8(x)|\u00B2','\u0394x',"#7dd3fc",'rgba(125,211,252,0.35)');
+    panel(1,sp,2.5,'Momentum  |\u03C6(p)|\u00B2','\u0394p','#fb923c','rgba(251,146,60,0.35)');
+    line(pw,top-10,pw,yb+4,'#334155',1);
+    sel('labInfo').innerHTML='<span>\u0394x = <b>'+s.toFixed(2)+'</b></span><span>\u0394p = \u210F/(2\u03C3) = <b>'+sp.toFixed(2)+'</b></span><span>\u0394x\u00B7\u0394p = <b>'+(s*sp).toFixed(2)+' \u210F</b> (the minimum, \u210F/2)</span>';
+  }
+};
+
+function labLoop(now){
+  requestAnimationFrame(labLoop);
+  if(labMode&&MODS[labMode])MODS[labMode].frame(now);
+}
+
+window.addEventListener('resize',function(){
+  if(sel('hyd').style.display!=='none')resize();
+  if(labMode){labResize();if(MODS[labMode].draw)MODS[labMode].draw(performance.now());}
+});
+
+resize();
+rebuild();
+animate();
+labLoop(0);
+</script>
+</body>
+</html>
