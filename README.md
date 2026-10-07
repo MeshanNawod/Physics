@@ -1,24 +1,48 @@
-Quantum Lab (quantum_lab.html)
-An interactive, single-file web application built with Three.js and vanilla JavaScript that visualizes fundamental concepts in quantum mechanics.
-Overview & Features
-The application features a responsive tabbed interface allowing users to explore different quantum physics simulations:
- * Hydrogen Atom (3D Visualization):
-   * Interactive electron clouds, angular momentum (L) vector orientations, radial probability densities, and spin (S) states.
-   * Customization options for quantum numbers (n, l, m_l), color maps (plasma, fire, cool, viridis), and point densities (4k to 15k points).
-   * 3D orbit controls (rotate via mouse/touch, zoom via scroll).
- * Quantum Tunneling:
-   * Time-dependent Schrödinger equation (TDSE) simulation using a staggered leapfrog (Visscher) algorithm.
-   * Visualizes wave packet propagation through a rectangular potential barrier, showing transmission and reflection over time.
- * Particle in a Box:
-   * Explores energy eigenstates and superpositions (sloshing effect between n=1 and n=2) within an infinite square well.
- * Quantum Harmonic Oscillator:
-   * Visualizes wave functions (\psi), probability densities (\vert{}\psi\vert{}^2), and classically forbidden regions where quantum tunneling/leaking occurs.
- * Heisenberg Uncertainty Principle:
-   * Demonstrates the relationship between position spread (\Delta x) and momentum spread (\Delta p) using a Gaussian wave packet.
-Technology Stack
- * Rendering Engine: Three.js (r128) for 3D WebGL graphics.
- * Styling & UI: Pure CSS with support for dark/light system color schemes via native CSS variables (@media (prefers-color-scheme: dark)).
- * Architecture: Zero-dependency build setup—contained entirely within a single HTML file combining numerical physics computations and UI rendering logic.
-Getting Started
- * Save the source code locally as quantum_lab.html.
- * Open the file in any modern web browser that supports WebGL (Chrome, Firefox, Safari, Edge). An active internet connection is required on first load to fetch the Three.js library from Cloudflare CDN.
+# Advanced Physics: Analytical Derivations & Computational Models
+
+A comprehensive repository dedicated to theoretical problem-solving, computational simulations, and data analysis tools covering classical mechanics, statistical physics, electromagnetism, and advanced quantum systems.
+
+---
+
+## 🚀 Key Focus Areas
+
+* **Classical & Statistical Mechanics:** Simulations of phase space trajectories, partition functions, and Maxwell-Boltzmann statistical distributions.
+* **Electrodynamics & Wave Propagation:** Computational modeling of electromagnetic fields, wave equation solutions, and boundary value problems.
+* **Experimental Data Analysis:** Automated curve fitting, linear regression models, and error propagation analysis using scientific computing libraries.
+* **Mathematical Methods in Physics:** Numerical solvers for ordinary and partial differential equations governing physical systems.
+
+---
+
+## 🛠️ Tech Stack & Tools
+
+* **Primary Language:** Python, C++
+* **Scientific Computing:** NumPy, SciPy, SymPy, OriginPro automation scripts
+* **Data Visualization:** Matplotlib, Seaborn
+* **Environment:** Jupyter Notebooks, Linux shell utilities
+
+---
+
+## 📂 Repository Structure
+
+```text
+├── mechanics/           # Classical mechanics simulations and Lagrangian/Hamiltonian solvers
+├── thermodynamics/      # Statistical physics and thermal distribution scripts
+├── electromagnetism/    # Field mapping and wave propagation models
+├── data-analysis/       # Experimental error analysis and curve fitting utilities
+└── docs/                # Theoretical notes, derivations, and lab report resources
+
+⚙️ Getting Started
+Prerequisites
+Clone the repository and install the required physics and mathematics computing packages:
+git clone [https://github.com/MeshanNawod/Physics.git](https://github.com/MeshanNawod/Physics.git)
+cd Physics
+pip install numpy scipy matplotlib sympy
+
+Running Simulations
+Navigate to the specific submodule directory (e.g., mechanics/ or thermodynamics/) and execute the Python scripts or open the corresponding Jupyter notebooks to review models and generate plots.
+👥 Author
+ * Meshan Nawod (meshannawodme@gmail.com)
+   Faculty of Science, University of Peradeniya
+📄 License
+Maintained for academic coursework, research, and scientific exploration.
+
